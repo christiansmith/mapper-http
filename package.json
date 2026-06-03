@@ -1,0 +1,17 @@
+{
+  "name": "@christiansmith/mapper-http",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "HTTP server for running Mapper mappings",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "scripts": {
+    "test": "echo \"Run tests with: deno test --allow-net\" && exit 1"
+  },
+  "author": "Christian Smith",
+  "license": "MIT",
+  "dependencies": {
+    "@christiansmith/mapper-js": "^0.1.1",
+    "jose": "^5"
+  }
+}
