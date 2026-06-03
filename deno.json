@@ -4,6 +4,9 @@
   "license": "MIT",
   "exports": "./src/index.js",
   "nodeModulesDir": "none",
+  "publish": {
+    "exclude": ["test", "run.js", ".prettierrc"]
+  },
   "imports": {
     "@christiansmith/mapper-js": "jsr:@christiansmith/mapper-js@^0.1.1",
     "jose": "npm:jose@^5",
