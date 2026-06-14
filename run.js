@@ -19,7 +19,10 @@ const mappings = {
   }
 }
 
-const server = createServer(mappings, {}, { cors: { origin: '*' } })
+const server = createServer(mappings, {}, {
+  cors: { origin: '*' },
+  logging: { format: 'pretty' }
+})
 
 server.listen({ port: 3333 })
 console.log('mapper-http listening on http://localhost:3333')

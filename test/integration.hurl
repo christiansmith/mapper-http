@@ -7,6 +7,7 @@ GET http://localhost:3333/health
 HTTP 200
 [Asserts]
 jsonpath "$.status" == "ok"
+header "x-request-id" exists
 
 # Run the echo mapping over an input
 POST http://localhost:3333/map
@@ -34,7 +35,8 @@ Content-Type: application/json
 }
 HTTP 400
 [Asserts]
-jsonpath "$.error" == "bad_request"
+jsonpath "$.code" == "BadRequest"
+jsonpath "$.requestId" exists
 
 # Unknown route is a 404
 GET http://localhost:3333/nope
