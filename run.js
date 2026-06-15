@@ -1,28 +1,31 @@
-/**
- * Example runner for local development.
- *
- *   deno task dev
- *
- * Serves a trivial `echo` mapping with CORS open and no authentication.
- */
 import createServer from './src/index.js'
 
-const mappings = {
-  $id: 'example',
-  mappings: {
-    echo: {
-      $id: 'echo',
-      mapping: {
-        '/echo': '/'
-      }
-    }
+const port = Number(Deno.env.get('PORT') || 3333)
+const mappingsPath   = Deno.env.get('MAPPINGS')
+const extensionsPath = Deno.env.get('EXTENSIONS')
+const optionsJson    = Deno.env.get('OPTIONS')
+
+if (!mappingsPath || !extensionsPath) {
+  console.error('Error: MAPPINGS and EXTENSIONS environment variables are required.')
+  console.error('  -e MAPPINGS=/path/mappings/index.js')
+  console.error('  -e EXTENSIONS=/path/extensions/index.js')
+  Deno.exit(1)
+}
+
+let options = {}
+if (optionsJson) {
+  try {
+    options = JSON.parse(optionsJson)
+  } catch {
+    console.error('Error: OPTIONS must be valid JSON.')
+    Deno.exit(1)
   }
 }
 
-const server = createServer(mappings, {}, {
-  cors: { origin: '*' },
-  logging: { format: 'pretty' }
-})
+const { default: mappings }   = await import(mappingsPath)
+const { default: extensions } = await import(extensionsPath)
 
-server.listen({ port: 3333 })
-console.log('mapper-http listening on http://localhost:3333')
+const server = createServer(mappings, extensions, options)
+
+server.listen({ port })
+console.log(`mapper-http listening on http://localhost:${port}`)
