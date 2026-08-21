@@ -1,0 +1,4 @@
+$id: double
+mapping:
+  /left: /value
+  /right: /value

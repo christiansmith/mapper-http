@@ -1,0 +1,6 @@
+$id: greetings
+mappings:
+  greet:
+    $id: greet
+    mapping:
+      /text: /message

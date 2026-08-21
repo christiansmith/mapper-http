@@ -4,6 +4,7 @@
     "jsr:@christiansmith/mapper-js@0.3": "0.3.0",
     "jsr:@std/assert@1": "1.0.11",
     "jsr:@std/internal@^1.0.5": "1.0.13",
+    "jsr:@std/yaml@1": "1.2.0",
     "npm:@christiansmith/mapper-js@0.3": "0.3.0",
     "npm:jose@5": "5.10.0"
   },
@@ -19,6 +20,9 @@
     },
     "@std/internal@1.0.13": {
       "integrity": "2f9546691d4ac2d32859c82dff284aaeac980ddeca38430d07941e7e288725c0"
+    },
+    "@std/yaml@1.2.0": {
+      "integrity": "20beb41e4983ba3437dbefac62b14061ab058e8a187596f19d28ff9035f6e6cf"
     }
   },
   "npm": {
@@ -33,6 +37,7 @@
     "dependencies": [
       "jsr:@christiansmith/mapper-js@0.3",
       "jsr:@std/assert@1",
+      "jsr:@std/yaml@1",
       "npm:jose@5"
     ],
     "packageJson": {
