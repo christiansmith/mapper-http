@@ -365,3 +365,127 @@ Deno.test('a token signed with a disallowed algorithm is rejected', async () => 
   assertEquals(res.status, 401)
   await res.body?.cancel()
 })
+
+// --- POST /validate ---
+
+/** POST a JSON body to /validate. */
+function validateRequest(body, headers) {
+  return new Request('http://x/validate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body)
+  })
+}
+
+Deno.test('a valid document validates at 200 with a full report', async () => {
+  const server = testServer()
+  const res = await server.fetch(validateRequest({ mapping: greetDocument }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, true)
+  assertEquals(Array.isArray(body.errors), true)
+  assertEquals(Array.isArray(body.warnings), true)
+})
+
+Deno.test('an invalid document is still a 200 — the report is data', async () => {
+  const server = testServer()
+  const res = await server.fetch(validateRequest({ mapping: { mapping: 42 } }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, false)
+  assertEquals(body.errors.length > 0, true)
+})
+
+Deno.test('a document referencing an installed mapping validates as reachable', async () => {
+  const server = testServer()
+  const document = {
+    $id: 'caller',
+    mappings: {
+      caller: { $id: 'caller', mapping: { '/inner': 'echo' } }
+    }
+  }
+  const res = await server.fetch(validateRequest({ mapping: document }))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).valid, true)
+})
+
+Deno.test('a document referencing an unknown mapping reports it, at 200', async () => {
+  const server = testServer()
+  const document = {
+    $id: 'caller',
+    mappings: {
+      caller: { $id: 'caller', mapping: { '/inner': 'missing' } }
+    }
+  }
+  const res = await server.fetch(validateRequest({ mapping: document }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, false)
+})
+
+Deno.test('a registered mapping validates by name', async () => {
+  const server = testServer()
+  const res = await server.fetch(validateRequest({ mapping: 'echo' }))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).valid, true)
+})
+
+Deno.test('validating an unknown registered id is a 404', async () => {
+  const server = testServer()
+  const res = await server.fetch(validateRequest({ mapping: 'nope' }))
+  assertEquals(res.status, 404)
+  const body = await res.json()
+  assertEquals(body.code, 'NotFound')
+})
+
+Deno.test('a mistyped or missing mapping on /validate is a 400', async () => {
+  const server = testServer()
+  const mistyped = await server.fetch(validateRequest({ mapping: 42 }))
+  assertEquals(mistyped.status, 400)
+  await mistyped.body?.cancel()
+
+  const missing = await server.fetch(validateRequest({}))
+  assertEquals(missing.status, 400)
+  const body = await missing.json()
+  assertEquals(body.code, 'BadRequest')
+})
+
+Deno.test('wrong method on /validate is 405', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/validate'))
+  assertEquals(res.status, 405)
+  const body = await res.json()
+  assertEquals(body.code, 'MethodNotAllowed')
+})
+
+Deno.test('/validate is authenticated when auth is configured', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(validateRequest({ mapping: 'echo' }))
+  assertEquals(res.status, 401)
+  const body = await res.json()
+  assertEquals(body.code, 'Unauthorized')
+})
+
+Deno.test('validate claims forbid tokens without them', async () => {
+  const server = testServer({ auth: { secret: SECRET }, validate: { claims: { role: ['admin'] } } })
+  const jwt = await token({ role: 'user' })
+  const res = await server.fetch(validateRequest({ mapping: 'echo' }, { authorization: `Bearer ${jwt}` }))
+  assertEquals(res.status, 403)
+  const body = await res.json()
+  assertEquals(body.code, 'Forbidden')
+})
+
+Deno.test('validate claims admit tokens that satisfy them', async () => {
+  const server = testServer({ auth: { secret: SECRET }, validate: { claims: { role: ['admin'] } } })
+  const jwt = await token({ role: 'admin' })
+  const res = await server.fetch(validateRequest({ mapping: 'echo' }, { authorization: `Bearer ${jwt}` }))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).valid, true)
+})
+
+Deno.test('validation does not require the explicit map capability', async () => {
+  const server = testServer()
+  const res = await server.fetch(validateRequest({ mapping: greetDocument }))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).valid, true)
+})

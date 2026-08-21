@@ -24,7 +24,8 @@ const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
  *
  * Expose a Mapper instance over HTTP. A deployment supplies its own mappings
  * and extensions; this server adds authentication, CORS, structured logging,
- * and a small set of endpoints for running mappings.
+ * and a small set of endpoints for running, validating, and inspecting
+ * mappings.
  *
  * Error handling has two planes:
  *   - **Server errors** (bad JSON, missing fields, oversized body, auth,
@@ -44,6 +45,7 @@ const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
  * @param {number} [options.maxBodyBytes] - reject larger request bodies with 413 (default 1 MiB)
  * @param {string} [options.requestIdPrefix] - prefix for generated request ids (default 'req_')
  * @param {object} [options.map] - { invalidStatus?: number, claims?: Record<string, unknown>, explicit?: boolean | { claims?: Record<string, unknown> } }
+ * @param {object} [options.validate] - { claims?: Record<string, unknown> } gating for POST /validate
  * @returns {{ fetch: (req: Request) => Promise<Response>, listen: (opts?: object) => unknown, mapper: Mapper }}
  */
 function createServer(mappings, extensions, options) {
@@ -61,6 +63,7 @@ function createServer(mappings, extensions, options) {
   const explicitEnabled = Boolean(mapOptions.explicit)
   const explicitClaims =
     (typeof mapOptions.explicit === 'object' && mapOptions.explicit !== null && mapOptions.explicit.claims) || null
+  const validateClaims = (opts.validate && opts.validate.claims) || null
   const requestIdPrefix = opts.requestIdPrefix || 'req_'
 
   /**
@@ -93,7 +96,7 @@ function createServer(mappings, extensions, options) {
       identity = await authenticate(req)
     }
 
-    // Run a registered mapping over a supplied input.
+    // Run a registered or explicit mapping over a supplied input.
     if (pathname === '/map') {
       if (method !== 'POST') {
         throw new MethodNotAllowedError('Use POST')
@@ -102,6 +105,17 @@ function createServer(mappings, extensions, options) {
         throw new ForbiddenError('Caller lacks the claims required for /map')
       }
       return runMapping(req, reqId, cors, identity)
+    }
+
+    // Validate a document or registered mapping against this instance.
+    if (pathname === '/validate') {
+      if (method !== 'POST') {
+        throw new MethodNotAllowedError('Use POST')
+      }
+      if (validateClaims && !checkClaims(identity, validateClaims)) {
+        throw new ForbiddenError('Caller lacks the claims required for /validate')
+      }
+      return runValidate(req, reqId, cors)
     }
 
     // List registered mappings.
@@ -122,6 +136,51 @@ function createServer(mappings, extensions, options) {
    */
   function isPlainObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+  }
+
+  /**
+   * readJsonBody - read a request body under the size cap and parse it as
+   * JSON. Checks the declared content-length first (a cheap early reject),
+   * then enforces the cap on the actual bytes read — a chunked request, or
+   * an in-memory Request, may carry no content-length at all.
+   * @param {Request} req
+   */
+  async function readJsonBody(req) {
+    const declaredLength = Number(req.headers.get('content-length') || 0)
+    if (declaredLength > maxBodyBytes) {
+      throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
+    }
+
+    const buffer = await req.arrayBuffer()
+    if (buffer.byteLength > maxBodyBytes) {
+      throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
+    }
+
+    try {
+      return JSON.parse(new TextDecoder().decode(buffer))
+    } catch {
+      throw new BadRequestError('Body must be valid JSON')
+    }
+  }
+
+  /**
+   * documentEngine - a fresh engine for one caller-supplied document: the
+   * registered mappings plus the document's own family, registered ahead of
+   * validation so reachability checks see exactly the registry evaluation
+   * will use (the document first, then the installed mappings). The serving
+   * instance is never touched.
+   * @param {object} document
+   */
+  function documentEngine(document) {
+    const engine = new Mapper({ mappings: mapper.mappings }, engineExtensions)
+
+    if (isPlainObject(document.mappings)) {
+      for (const member of Object.values(document.mappings)) {
+        engine.add(member)
+      }
+    }
+
+    return engine
   }
 
   /**
@@ -163,13 +222,7 @@ function createServer(mappings, extensions, options) {
       throw new ForbiddenError('Caller lacks the claims required for explicit mappings')
     }
 
-    const engine = new Mapper({ mappings: mapper.mappings }, engineExtensions)
-
-    if (isPlainObject(document.mappings)) {
-      for (const member of Object.values(document.mappings)) {
-        engine.add(member)
-      }
-    }
+    const engine = documentEngine(document)
 
     const report = engine.validate(document)
     if (!report.valid) {
@@ -192,25 +245,7 @@ function createServer(mappings, extensions, options) {
    * @param {object|null} identity
    */
   async function runMapping(req, reqId, cors, identity) {
-    // Reject oversized bodies. Check the declared content-length first (a cheap
-    // early reject), then enforce the cap on the actual bytes read — a chunked
-    // request, or an in-memory Request, may carry no content-length at all.
-    const declaredLength = Number(req.headers.get('content-length') || 0)
-    if (declaredLength > maxBodyBytes) {
-      throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
-    }
-
-    const buffer = await req.arrayBuffer()
-    if (buffer.byteLength > maxBodyBytes) {
-      throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
-    }
-
-    let payload
-    try {
-      payload = JSON.parse(new TextDecoder().decode(buffer))
-    } catch {
-      throw new BadRequestError('Body must be valid JSON')
-    }
+    const payload = await readJsonBody(req)
 
     const mapping = payload && payload.mapping
     const input = payload && payload.input
@@ -226,6 +261,38 @@ function createServer(mappings, extensions, options) {
 
     if (isPlainObject(mapping)) {
       return runExplicitMapping(mapping, input, reqId, cors, identity)
+    }
+
+    throw new BadRequestError('"mapping" must be a string naming a registered mapping, or a mapping document object')
+  }
+
+  /**
+   * runValidate - handle `POST /validate` with a body of `{ mapping }`,
+   * discriminated by type exactly like `/map`: an object is validated as a
+   * caller-supplied document; a string validates an already-registered
+   * mapping the same way. The response is always 200 with the full report —
+   * a validation report is data, not an error, even when `valid` is false.
+   * 4xx is reserved for the request itself being malformed.
+   * @param {Request} req
+   * @param {string} reqId
+   * @param {Record<string, string>} cors
+   */
+  async function runValidate(req, reqId, cors) {
+    const payload = await readJsonBody(req)
+
+    const mapping = payload && payload.mapping
+
+    if (typeof mapping === 'string') {
+      if (!Object.hasOwn(mapper.mappings, mapping)) {
+        throw new NotFoundError(`No mapping registered as "${mapping}"`)
+      }
+
+      return json(mapper.validate(mapper.mappings[mapping]), { reqId, cors })
+    }
+
+    if (isPlainObject(mapping)) {
+      const engine = documentEngine(mapping)
+      return json(engine.validate(mapping), { reqId, cors })
     }
 
     throw new BadRequestError('"mapping" must be a string naming a registered mapping, or a mapping document object')
