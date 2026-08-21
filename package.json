@@ -1,6 +1,6 @@
 {
   "name": "@christiansmith/mapper-http",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "HTTP server for running Mapper mappings",
   "main": "src/index.js",
@@ -11,7 +11,7 @@
   "author": "Christian Smith",
   "license": "MIT",
   "dependencies": {
-    "@christiansmith/mapper-js": "^0.1.1",
+    "@christiansmith/mapper-js": "^0.3.0",
     "jose": "^5"
   }
 }
