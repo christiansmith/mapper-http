@@ -109,7 +109,9 @@ Deno.test('wrong method on /map is 405', async () => {
 
 Deno.test('OPTIONS preflight returns 204 with CORS headers', async () => {
   const server = testServer()
-  const res = await server.fetch(new Request('http://x/map', { method: 'OPTIONS', headers: { origin: 'http://localhost:5173' } }))
+  const res = await server.fetch(
+    new Request('http://x/map', { method: 'OPTIONS', headers: { origin: 'http://localhost:5173' } })
+  )
   assertEquals(res.status, 204)
   assertEquals(res.headers.get('access-control-allow-origin'), '*')
 })
@@ -211,7 +213,9 @@ Deno.test('an explicit compound document evaluates when enabled', async () => {
 
 Deno.test('an explicit single descriptor evaluates when enabled', async () => {
   const server = testServer({ map: { explicit: true } })
-  const res = await server.fetch(mapRequest({ mapping: { mapping: { '/text': '/message' } }, input: { message: 'hi' } }))
+  const res = await server.fetch(
+    mapRequest({ mapping: { mapping: { '/text': '/message' } }, input: { message: 'hi' } })
+  )
   assertEquals(res.status, 200)
   const body = await res.json()
   assertEquals(body.text, 'hi')
@@ -294,7 +298,9 @@ Deno.test('a protected route rejects a missing token with 401', async () => {
 Deno.test('a protected route accepts a valid HS256 token', async () => {
   const server = testServer({ auth: { secret: SECRET } })
   const jwt = await token()
-  const res = await server.fetch(mapRequest({ mapping: 'echo', input: { hello: 'world' } }, { authorization: `Bearer ${jwt}` }))
+  const res = await server.fetch(
+    mapRequest({ mapping: 'echo', input: { hello: 'world' } }, { authorization: `Bearer ${jwt}` })
+  )
   assertEquals(res.status, 200)
   await res.body?.cancel()
 })
@@ -318,7 +324,9 @@ Deno.test('claim gate forbids tokens without the required claim', async () => {
 Deno.test('claim gate admits tokens with the required claim', async () => {
   const server = testServer({ auth: { secret: SECRET }, map: { claims: { role: ['admin'] } } })
   const jwt = await token({ role: 'admin' })
-  const res = await server.fetch(mapRequest({ mapping: 'echo', input: { hello: 'world' } }, { authorization: `Bearer ${jwt}` }))
+  const res = await server.fetch(
+    mapRequest({ mapping: 'echo', input: { hello: 'world' } }, { authorization: `Bearer ${jwt}` })
+  )
   assertEquals(res.status, 200)
   await res.body?.cancel()
 })
@@ -329,7 +337,9 @@ Deno.test('explicit claims forbid callers without them, beyond map claims', asyn
     map: { claims: { role: ['user', 'admin'] }, explicit: { claims: { role: ['admin'] } } }
   })
   const jwt = await token({ role: 'user' })
-  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` }))
+  const res = await server.fetch(
+    mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` })
+  )
   assertEquals(res.status, 403)
   const body = await res.json()
   assertEquals(body.code, 'Forbidden')
@@ -341,7 +351,9 @@ Deno.test('explicit claims admit callers that satisfy them', async () => {
     map: { claims: { role: ['user', 'admin'] }, explicit: { claims: { role: ['admin'] } } }
   })
   const jwt = await token({ role: 'admin' })
-  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` }))
+  const res = await server.fetch(
+    mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` })
+  )
   assertEquals(res.status, 200)
   assertEquals((await res.json()).text, 'hello')
 })

@@ -6,7 +6,15 @@ import { checkClaims, createAuthenticator } from './auth.js'
 import { corsHeaders } from './cors.js'
 import { error, json, requestId } from './respond.js'
 import { createLogger } from './log.js'
-import { BadRequestError, ForbiddenError, InvalidMappingDocumentError, MethodNotAllowedError, NotFoundError, PayloadTooLargeError, ValidationError } from './errors.js'
+import {
+  BadRequestError,
+  ForbiddenError,
+  InvalidMappingDocumentError,
+  MethodNotAllowedError,
+  NotFoundError,
+  PayloadTooLargeError,
+  ValidationError
+} from './errors.js'
 
 /** Default request-body cap (1 MiB). */
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
@@ -51,7 +59,8 @@ function createServer(mappings, extensions, options) {
   const invalidStatus = mapOptions.invalidStatus || null
   const mapClaims = mapOptions.claims || null
   const explicitEnabled = Boolean(mapOptions.explicit)
-  const explicitClaims = (typeof mapOptions.explicit === 'object' && mapOptions.explicit !== null && mapOptions.explicit.claims) || null
+  const explicitClaims =
+    (typeof mapOptions.explicit === 'object' && mapOptions.explicit !== null && mapOptions.explicit.claims) || null
   const requestIdPrefix = opts.requestIdPrefix || 'req_'
 
   /**
@@ -249,7 +258,10 @@ function createServer(mappings, extensions, options) {
     /** @type {Record<string, unknown>} */
     const fields = { requestId: reqId, method: req.method, path: pathname, status: res.status, duration }
     if (caught) {
-      fields.error = { code: caught.code || 'InternalError', message: caught instanceof Error ? caught.message : String(caught) }
+      fields.error = {
+        code: caught.code || 'InternalError',
+        message: caught instanceof Error ? caught.message : String(caught)
+      }
     }
     if (res.status >= 500) {
       logger.error('request failed', fields)

@@ -29,7 +29,10 @@ function algorithmsFor(config) {
     return a
   }
   if (typeof a === 'string' && a.trim()) {
-    return a.split(',').map((s) => s.trim()).filter(Boolean)
+    return a
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
   }
   return config.secret ? ['HS256'] : ['RS256', 'ES256', 'EdDSA']
 }
