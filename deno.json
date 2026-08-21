@@ -5,7 +5,7 @@
   "exports": "./src/index.js",
   "nodeModulesDir": "none",
   "publish": {
-    "exclude": ["test", "run.js", ".prettierrc", "mappings", "extensions", "Dockerfile", ".dockerignore"]
+    "exclude": ["test", "run.js", ".prettierrc", "mappings", "extensions", "Dockerfile", ".dockerignore", ".github"]
   },
   "imports": {
     "@christiansmith/mapper-js": "jsr:@christiansmith/mapper-js@^0.3.0",
