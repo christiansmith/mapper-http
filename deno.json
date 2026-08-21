@@ -5,7 +5,7 @@
   "exports": "./src/index.js",
   "nodeModulesDir": "none",
   "publish": {
-    "exclude": ["test", "run.js", ".prettierrc"]
+    "exclude": ["test", "run.js", ".prettierrc", "mappings", "extensions", "Dockerfile", ".dockerignore"]
   },
   "imports": {
     "@christiansmith/mapper-js": "jsr:@christiansmith/mapper-js@^0.3.0",
@@ -14,7 +14,7 @@
     "@std/yaml": "jsr:@std/yaml@^1"
   },
   "tasks": {
-    "dev": "deno run --allow-net --allow-env run.js",
+    "dev": "OPTIONS='{\"cors\":{\"origin\":\"*\"},\"logging\":{\"format\":\"pretty\"}}' deno run --allow-net --allow-env --allow-read run.js",
     "test": "deno test --allow-net --allow-read"
   }
 }

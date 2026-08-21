@@ -1,0 +1,7 @@
+$id: greetings
+description: A compound document with one member; maps /message to /text.
+mappings:
+  greet:
+    $id: greet
+    mapping:
+      /text: /message

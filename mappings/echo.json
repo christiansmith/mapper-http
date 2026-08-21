@@ -1,0 +1,5 @@
+{
+  "$id": "echo",
+  "description": "Echo the whole input back under /echo.",
+  "mapping": { "/echo": "/" }
+}
