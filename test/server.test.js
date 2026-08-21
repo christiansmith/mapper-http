@@ -489,3 +489,64 @@ Deno.test('validation does not require the explicit map capability', async () =>
   assertEquals(res.status, 200)
   assertEquals((await res.json()).valid, true)
 })
+
+// --- GET /health/mapping ---
+
+Deno.test('/health/mapping is 200 when the mapping path evaluates', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/health/mapping'))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).status, 'ok')
+})
+
+Deno.test('/health/mapping exercises a configured registered canary', async () => {
+  const server = testServer({ health: { mapping: 'echo' } })
+  const res = await server.fetch(new Request('http://x/health/mapping'))
+  assertEquals(res.status, 200)
+  await res.body?.cancel()
+})
+
+Deno.test('an unregistered canary id reports 503', async () => {
+  const server = testServer({ health: { mapping: 'nope' } })
+  const res = await server.fetch(new Request('http://x/health/mapping'))
+  assertEquals(res.status, 503)
+  const body = await res.json()
+  assertEquals(body.code, 'Unavailable')
+})
+
+Deno.test('a canary that outruns health.timeout reports 503', async () => {
+  const mappings = {
+    $id: 'test',
+    mappings: {
+      slowly: { $id: 'slowly', mapping: { '/x': { slow: true } } }
+    }
+  }
+  const extensions = {
+    plugins: {
+      slow: async () => await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+  }
+  const server = createServer(mappings, extensions, {
+    logging: { level: 'silent' },
+    health: { mapping: 'slowly', timeout: 20 }
+  })
+  const res = await server.fetch(new Request('http://x/health/mapping'))
+  assertEquals(res.status, 503)
+  const body = await res.json()
+  assertEquals(body.code, 'Unavailable')
+  await new Promise((resolve) => setTimeout(resolve, 320))
+})
+
+Deno.test('/health/mapping stays unauthenticated when auth is configured', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(new Request('http://x/health/mapping'))
+  assertEquals(res.status, 200)
+  await res.body?.cancel()
+})
+
+Deno.test('wrong method on /health/mapping is 405', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/health/mapping', { method: 'POST' }))
+  assertEquals(res.status, 405)
+  await res.body?.cancel()
+})

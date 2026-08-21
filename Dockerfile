@@ -18,7 +18,7 @@ RUN deno cache run.js
 ENV PORT=3333
 EXPOSE 3333
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["deno", "eval", "const port = Deno.env.get('PORT') || '3333'; const res = await fetch(`http://localhost:${port}/health`); if (!res.ok) Deno.exit(1)"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD ["deno", "eval", "const port = Deno.env.get('PORT') || '3333'; const res = await fetch(`http://localhost:${port}/health/mapping`); if (!res.ok) Deno.exit(1)"]
 
 CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "run.js"]

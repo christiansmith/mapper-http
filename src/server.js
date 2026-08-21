@@ -7,12 +7,14 @@ import { corsHeaders } from './cors.js'
 import { error, json, requestId } from './respond.js'
 import { createLogger } from './log.js'
 import {
+  ApiError,
   BadRequestError,
   ForbiddenError,
   InvalidMappingDocumentError,
   MethodNotAllowedError,
   NotFoundError,
   PayloadTooLargeError,
+  UnavailableError,
   ValidationError
 } from './errors.js'
 
@@ -46,6 +48,7 @@ const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
  * @param {string} [options.requestIdPrefix] - prefix for generated request ids (default 'req_')
  * @param {object} [options.map] - { invalidStatus?: number, claims?: Record<string, unknown>, explicit?: boolean | { claims?: Record<string, unknown> } }
  * @param {object} [options.validate] - { claims?: Record<string, unknown> } gating for POST /validate
+ * @param {object} [options.health] - { mapping?: string, timeout?: number } canary configuration for GET /health/mapping
  * @returns {{ fetch: (req: Request) => Promise<Response>, listen: (opts?: object) => unknown, mapper: Mapper }}
  */
 function createServer(mappings, extensions, options) {
@@ -64,6 +67,9 @@ function createServer(mappings, extensions, options) {
   const explicitClaims =
     (typeof mapOptions.explicit === 'object' && mapOptions.explicit !== null && mapOptions.explicit.claims) || null
   const validateClaims = (opts.validate && opts.validate.claims) || null
+  const healthOptions = opts.health || {}
+  const healthMapping = healthOptions.mapping || null
+  const healthTimeout = healthOptions.timeout || 5000
   const requestIdPrefix = opts.requestIdPrefix || 'req_'
 
   /**
@@ -82,12 +88,19 @@ function createServer(mappings, extensions, options) {
       return new Response(null, { status: 204, headers: { ...cors, 'x-request-id': reqId } })
     }
 
-    // Health check (unauthenticated).
+    // Health checks (unauthenticated).
     if (pathname === '/health') {
       if (method !== 'GET') {
         throw new MethodNotAllowedError('Use GET')
       }
       return json({ status: 'ok' }, { reqId, cors })
+    }
+
+    if (pathname === '/health/mapping') {
+      if (method !== 'GET') {
+        throw new MethodNotAllowedError('Use GET')
+      }
+      return runHealthMapping(reqId, cors)
     }
 
     // Authenticate everything else when auth is configured.
@@ -264,6 +277,43 @@ function createServer(mappings, extensions, options) {
     }
 
     throw new BadRequestError('"mapping" must be a string naming a registered mapping, or a mapping document object')
+  }
+
+  /**
+   * runHealthMapping - exercise the real mapping path: evaluate a canary
+   * mapping through the full engine and report 200 only when evaluation
+   * completes within `health.timeout`; otherwise 503. The canary is
+   * `health.mapping` (a registered mapping id) when configured, else a
+   * trivial inline echo. This exists because process liveness does not
+   * imply mapping-path liveness.
+   * @param {string} reqId
+   * @param {Record<string, string>} cors
+   */
+  async function runHealthMapping(reqId, cors) {
+    if (healthMapping && !Object.hasOwn(mapper.mappings, healthMapping)) {
+      throw new UnavailableError(`Health canary "${healthMapping}" is not a registered mapping`)
+    }
+
+    const canary = healthMapping || { mapping: { '/echo': '/' } }
+
+    /** @type {ReturnType<typeof setTimeout>} */
+    let timer
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new UnavailableError(`Mapping-path health check timed out after ${healthTimeout} ms`)),
+        healthTimeout
+      )
+    })
+
+    try {
+      await Promise.race([mapper.map(canary, { health: 'check' }, {}), expired])
+    } catch (err) {
+      throw err instanceof ApiError ? err : new UnavailableError('Mapping-path health check failed')
+    } finally {
+      clearTimeout(timer)
+    }
+
+    return json({ status: 'ok' }, { reqId, cors })
   }
 
   /**

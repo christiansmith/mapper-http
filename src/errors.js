@@ -89,3 +89,10 @@ export class PayloadTooLargeError extends ApiError {
     super('PayloadTooLarge', message, 413)
   }
 }
+
+export class UnavailableError extends ApiError {
+  /** @param {string} message */
+  constructor(message) {
+    super('Unavailable', message, 503)
+  }
+}
