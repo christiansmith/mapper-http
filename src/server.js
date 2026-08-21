@@ -6,7 +6,7 @@ import { checkClaims, createAuthenticator } from './auth.js'
 import { corsHeaders } from './cors.js'
 import { error, json, requestId } from './respond.js'
 import { createLogger } from './log.js'
-import { BadRequestError, ForbiddenError, MethodNotAllowedError, NotFoundError, PayloadTooLargeError, ValidationError } from './errors.js'
+import { BadRequestError, ForbiddenError, InvalidMappingDocumentError, MethodNotAllowedError, NotFoundError, PayloadTooLargeError, ValidationError } from './errors.js'
 
 /** Default request-body cap (1 MiB). */
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
@@ -35,12 +35,13 @@ const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
  * @param {'minimal'|'full'} [options.errorDetail] - 5xx detail policy (default 'minimal')
  * @param {number} [options.maxBodyBytes] - reject larger request bodies with 413 (default 1 MiB)
  * @param {string} [options.requestIdPrefix] - prefix for generated request ids (default 'req_')
- * @param {object} [options.map] - { invalidStatus?: number, claims?: Record<string, unknown> }
+ * @param {object} [options.map] - { invalidStatus?: number, claims?: Record<string, unknown>, explicit?: boolean | { claims?: Record<string, unknown> } }
  * @returns {{ fetch: (req: Request) => Promise<Response>, listen: (opts?: object) => unknown, mapper: Mapper }}
  */
 function createServer(mappings, extensions, options) {
   const opts = options || {}
-  const mapper = new Mapper(mappings || { mappings: {} }, extensions || {})
+  const engineExtensions = extensions || {}
+  const mapper = new Mapper(mappings || { mappings: {} }, engineExtensions)
   const authenticate = opts.auth ? createAuthenticator(opts.auth) : null
   const corsConfig = opts.cors || null
   const logger = createLogger(opts.logging || {})
@@ -49,6 +50,8 @@ function createServer(mappings, extensions, options) {
   const mapOptions = opts.map || {}
   const invalidStatus = mapOptions.invalidStatus || null
   const mapClaims = mapOptions.claims || null
+  const explicitEnabled = Boolean(mapOptions.explicit)
+  const explicitClaims = (typeof mapOptions.explicit === 'object' && mapOptions.explicit !== null && mapOptions.explicit.claims) || null
   const requestIdPrefix = opts.requestIdPrefix || 'req_'
 
   /**
@@ -104,8 +107,76 @@ function createServer(mappings, extensions, options) {
   }
 
   /**
-   * runMapping - handle `POST /map` with a body of `{ mapping, input }`. The
-   * authenticated identity is provided to the mapper as `context.identity`.
+   * isPlainObject - a non-null, non-array object: the shape of a mapping
+   * document (single descriptor or compound) as opposed to a registered id.
+   * @param {unknown} value
+   */
+  function isPlainObject(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+  }
+
+  /**
+   * resultResponse - render a mapping result. The result is data at 200
+   * unless the deployment opts to promote a `valid:false` result into a
+   * client error via `map.invalidStatus`; both `/map` forms share this.
+   * @param {any} result
+   * @param {string} reqId
+   * @param {Record<string, string>} cors
+   */
+  function resultResponse(result, reqId, cors) {
+    if (invalidStatus && result && result.valid === false) {
+      throw new ValidationError('Mapping validation failed', result.errors, invalidStatus)
+    }
+    return json(result, { reqId, cors })
+  }
+
+  /**
+   * runExplicitMapping - evaluate a caller-supplied mapping document.
+   *
+   * Gate order: the capability must be enabled (`map.explicit`), the caller
+   * must satisfy `map.explicit.claims`, and the document must validate —
+   * an invalid document gets the full report at 422, never an evaluation
+   * attempt. Evaluation is stateless: a fresh engine is built for this call
+   * from the registered mappings, the document's own family is registered
+   * into it (so references resolve document-first, then installed), and the
+   * serving instance is never touched — nothing outlives the request.
+   * @param {object} document
+   * @param {unknown} input
+   * @param {string} reqId
+   * @param {Record<string, string>} cors
+   * @param {object|null} identity
+   */
+  async function runExplicitMapping(document, input, reqId, cors, identity) {
+    if (!explicitEnabled) {
+      throw new ForbiddenError('The explicit mapping form is not enabled on this deployment')
+    }
+    if (explicitClaims && !checkClaims(identity, explicitClaims)) {
+      throw new ForbiddenError('Caller lacks the claims required for explicit mappings')
+    }
+
+    const engine = new Mapper({ mappings: mapper.mappings }, engineExtensions)
+
+    if (isPlainObject(document.mappings)) {
+      for (const member of Object.values(document.mappings)) {
+        engine.add(member)
+      }
+    }
+
+    const report = engine.validate(document)
+    if (!report.valid) {
+      throw new InvalidMappingDocumentError(report)
+    }
+
+    const result = await engine.map(document, input, { identity })
+    return resultResponse(result, reqId, cors)
+  }
+
+  /**
+   * runMapping - handle `POST /map` with a body of `{ mapping, input }`,
+   * discriminated by the type of `mapping`: a string names a registered
+   * mapping; an object is an explicit mapping document (when enabled); any
+   * other type is a 400. The authenticated identity is provided to the
+   * mapper as `context.identity`.
    * @param {Request} req
    * @param {string} reqId
    * @param {Record<string, string>} cors
@@ -135,20 +206,20 @@ function createServer(mappings, extensions, options) {
     const mapping = payload && payload.mapping
     const input = payload && payload.input
 
-    if (!mapping) {
-      throw new BadRequestError('Missing "mapping"')
+    if (typeof mapping === 'string') {
+      if (!Object.hasOwn(mapper.mappings, mapping)) {
+        throw new NotFoundError(`No mapping registered as "${mapping}"`)
+      }
+
+      const result = await mapper.map(mapping, input, { identity })
+      return resultResponse(result, reqId, cors)
     }
 
-    const result = await mapper.map(mapping, input, { identity })
-
-    // The mapping result is data. Only when the deployment opts in do we
-    // promote a `valid:false` result into a client error (request-validation
-    // use case); otherwise it is returned verbatim for the caller to inspect.
-    if (invalidStatus && result && result.valid === false) {
-      throw new ValidationError('Mapping validation failed', result.errors, invalidStatus)
+    if (isPlainObject(mapping)) {
+      return runExplicitMapping(mapping, input, reqId, cors, identity)
     }
 
-    return json(result, { reqId, cors })
+    throw new BadRequestError('"mapping" must be a string naming a registered mapping, or a mapping document object')
   }
 
   /**

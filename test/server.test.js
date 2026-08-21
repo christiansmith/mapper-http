@@ -159,6 +159,117 @@ Deno.test('map.invalidStatus promotes valid:false to a ValidationError', async (
   assertEquals(Array.isArray(body.errors), true)
 })
 
+// --- POST /map: type discrimination and the explicit form ---
+
+/** A compound document carrying one `greet` mapping. */
+const greetDocument = {
+  $id: 'greet',
+  mappings: {
+    greet: { $id: 'greet', mapping: { '/text': '/message' } }
+  }
+}
+
+Deno.test('a string naming an unregistered mapping is a 404', async () => {
+  const server = testServer()
+  const res = await server.fetch(mapRequest({ mapping: 'nope', input: {} }))
+  assertEquals(res.status, 404)
+  const body = await res.json()
+  assertEquals(body.code, 'NotFound')
+})
+
+Deno.test('a mapping that is neither string nor object is a 400', async () => {
+  const server = testServer()
+  const res = await server.fetch(mapRequest({ mapping: 42, input: {} }))
+  assertEquals(res.status, 400)
+  const body = await res.json()
+  assertEquals(body.code, 'BadRequest')
+})
+
+Deno.test('an array-valued mapping is a 400', async () => {
+  const server = testServer()
+  const res = await server.fetch(mapRequest({ mapping: ['echo'], input: {} }))
+  assertEquals(res.status, 400)
+  const body = await res.json()
+  assertEquals(body.code, 'BadRequest')
+})
+
+Deno.test('an object mapping is 403 when the explicit form is not enabled', async () => {
+  const server = testServer()
+  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }))
+  assertEquals(res.status, 403)
+  const body = await res.json()
+  assertEquals(body.code, 'Forbidden')
+})
+
+Deno.test('an explicit compound document evaluates when enabled', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.text, 'hello')
+})
+
+Deno.test('an explicit single descriptor evaluates when enabled', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const res = await server.fetch(mapRequest({ mapping: { mapping: { '/text': '/message' } }, input: { message: 'hi' } }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.text, 'hi')
+})
+
+Deno.test('an invalid explicit document is a 422 with the full report', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const res = await server.fetch(mapRequest({ mapping: { mapping: 42 }, input: {} }))
+  assertEquals(res.status, 422)
+  const body = await res.json()
+  assertEquals(body.code, 'InvalidMappingDocument')
+  assertEquals(body.report.valid, false)
+  assertEquals(Array.isArray(body.report.errors), true)
+  assertEquals(Array.isArray(body.report.warnings), true)
+})
+
+Deno.test('an explicit document may reference installed mappings', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const document = {
+    $id: 'caller',
+    mappings: {
+      caller: { $id: 'caller', mapping: { '/inner': 'echo' } }
+    }
+  }
+  const res = await server.fetch(mapRequest({ mapping: document, input: { message: 'hi' } }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.inner.echo.message, 'hi')
+})
+
+Deno.test('an explicit submission never registers into the serving instance', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }))
+  assertEquals(res.status, 200)
+  await res.body?.cancel()
+
+  const listed = await server.fetch(new Request('http://x/mappings'))
+  const body = await listed.json()
+  assertEquals('greet' in body, false)
+})
+
+Deno.test('a document shadows a registered mapping for its own request only', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const shadow = {
+    $id: 'shadow',
+    mappings: {
+      echo: { $id: 'echo', mapping: { '/shadowed': '/message' } }
+    }
+  }
+  const explicit = await server.fetch(mapRequest({ mapping: shadow, input: { message: 'hi' } }))
+  assertEquals((await explicit.json()).shadowed, 'hi')
+
+  const registered = await server.fetch(mapRequest({ mapping: 'echo', input: { message: 'hi' } }))
+  const body = await registered.json()
+  assertEquals(body.echo.message, 'hi')
+  assertEquals(body.shadowed, undefined)
+})
+
 // --- auth: HS256 + algorithm allowlist ---
 
 const SECRET = 'test-secret-value'
@@ -210,6 +321,29 @@ Deno.test('claim gate admits tokens with the required claim', async () => {
   const res = await server.fetch(mapRequest({ mapping: 'echo', input: { hello: 'world' } }, { authorization: `Bearer ${jwt}` }))
   assertEquals(res.status, 200)
   await res.body?.cancel()
+})
+
+Deno.test('explicit claims forbid callers without them, beyond map claims', async () => {
+  const server = testServer({
+    auth: { secret: SECRET },
+    map: { claims: { role: ['user', 'admin'] }, explicit: { claims: { role: ['admin'] } } }
+  })
+  const jwt = await token({ role: 'user' })
+  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` }))
+  assertEquals(res.status, 403)
+  const body = await res.json()
+  assertEquals(body.code, 'Forbidden')
+})
+
+Deno.test('explicit claims admit callers that satisfy them', async () => {
+  const server = testServer({
+    auth: { secret: SECRET },
+    map: { claims: { role: ['user', 'admin'] }, explicit: { claims: { role: ['admin'] } } }
+  })
+  const jwt = await token({ role: 'admin' })
+  const res = await server.fetch(mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` }))
+  assertEquals(res.status, 200)
+  assertEquals((await res.json()).text, 'hello')
 })
 
 Deno.test('a token signed with a disallowed algorithm is rejected', async () => {

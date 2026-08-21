@@ -8,8 +8,8 @@
  *     this is the mapper result (`{ output, valid, errors }`); its `valid` and
  *     `errors` are *data* for the caller to inspect, not a transport error.
  *   - `error(err, …)` — a server error: `{ code, message, requestId }`
- *     (plus `errors` for validation errors). 5xx detail is suppressed under
- *     `errorDetail: "minimal"`.
+ *     (plus `errors` for validation errors, or `report` for invalid mapping
+ *     documents). 5xx detail is suppressed under `errorDetail: "minimal"`.
  */
 import { ApiError } from './errors.js'
 
@@ -67,6 +67,9 @@ export function error(err, { reqId, cors = {}, errorDetail = 'minimal' }) {
   const body = { code, message }
   if (isApi && /** @type {any} */ (err).errors) {
     body.errors = /** @type {any} */ (err).errors
+  }
+  if (isApi && /** @type {any} */ (err).report) {
+    body.report = /** @type {any} */ (err).report
   }
   body.requestId = reqId
 
