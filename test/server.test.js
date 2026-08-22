@@ -590,3 +590,48 @@ Deno.test('wrong method on /extensions is 405', async () => {
   assertEquals(res.status, 405)
   await res.body?.cancel()
 })
+
+// --- SEC: the per-capability gating story, end to end ---
+
+Deno.test('/mappings is authenticated when auth is configured', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(new Request('http://x/mappings'))
+  assertEquals(res.status, 401)
+  const body = await res.json()
+  assertEquals(body.code, 'Unauthorized')
+})
+
+Deno.test('unknown routes authenticate before resolving to 404', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(new Request('http://x/nope'))
+  assertEquals(res.status, 401)
+  await res.body?.cancel()
+})
+
+Deno.test('the reserved mappings write namespace stays 404', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/mappings/anything', { method: 'PUT', body: '{}' }))
+  assertEquals(res.status, 404)
+  const body = await res.json()
+  assertEquals(body.code, 'NotFound')
+})
+
+Deno.test('the explicit gate holds even when map claims are satisfied', async () => {
+  const server = testServer({ auth: { secret: SECRET }, map: { claims: { role: ['admin'] } } })
+  const jwt = await token({ role: 'admin' })
+  const res = await server.fetch(
+    mapRequest({ mapping: greetDocument, input: { message: 'hello' } }, { authorization: `Bearer ${jwt}` })
+  )
+  assertEquals(res.status, 403)
+  const body = await res.json()
+  assertEquals(body.code, 'Forbidden')
+})
+
+Deno.test('CORS preflight stays open when auth is configured', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(
+    new Request('http://x/map', { method: 'OPTIONS', headers: { origin: 'http://localhost:5173' } })
+  )
+  assertEquals(res.status, 204)
+  await res.body?.cancel()
+})
