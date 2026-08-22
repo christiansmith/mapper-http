@@ -12,8 +12,10 @@ RUN deno install --frozen
 COPY --chown=deno:deno src/ ./src/
 COPY --chown=deno:deno mappings/ ./mappings/
 COPY --chown=deno:deno extensions/ ./extensions/
+# The bundled extension surface is imported dynamically at startup, so it is
+# cached as its own entrypoint alongside the static graph.
 COPY --chown=deno:deno run.js ./
-RUN deno cache run.js
+RUN deno cache run.js extensions/index.js
 
 ENV PORT=3333
 EXPOSE 3333
