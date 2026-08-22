@@ -550,3 +550,43 @@ Deno.test('wrong method on /health/mapping is 405', async () => {
   assertEquals(res.status, 405)
   await res.body?.cancel()
 })
+
+// --- GET /extensions ---
+
+Deno.test('/extensions lists installed extension names only', async () => {
+  const extensions = {
+    initializers: { uuid: () => 'x' },
+    transformers: { shout: (value) => String(value).toUpperCase() },
+    plugins: { fetchy: async () => ({}) }
+  }
+  const server = createServer(
+    { $id: 'test', mappings: { echo: { $id: 'echo', mapping: { '/echo': '/' } } } },
+    extensions,
+    { logging: { level: 'silent' } }
+  )
+  const res = await server.fetch(new Request('http://x/extensions'))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body, { initializers: ['uuid'], transformers: ['shout'], plugins: ['fetchy'] })
+})
+
+Deno.test('/extensions reports empty registries as empty lists', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/extensions'))
+  assertEquals(res.status, 200)
+  assertEquals(await res.json(), { initializers: [], transformers: [], plugins: [] })
+})
+
+Deno.test('/extensions is authenticated when auth is configured', async () => {
+  const server = testServer({ auth: { secret: SECRET } })
+  const res = await server.fetch(new Request('http://x/extensions'))
+  assertEquals(res.status, 401)
+  await res.body?.cancel()
+})
+
+Deno.test('wrong method on /extensions is 405', async () => {
+  const server = testServer()
+  const res = await server.fetch(new Request('http://x/extensions', { method: 'POST' }))
+  assertEquals(res.status, 405)
+  await res.body?.cancel()
+})

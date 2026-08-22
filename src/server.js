@@ -139,6 +139,22 @@ function createServer(mappings, extensions, options) {
       return json(mapper.mappings, { reqId, cors })
     }
 
+    // List installed extension names — the names a mapping author can write
+    // against. Names only, never configuration, code, or values.
+    if (pathname === '/extensions') {
+      if (method !== 'GET') {
+        throw new MethodNotAllowedError('Use GET')
+      }
+      return json(
+        {
+          initializers: Object.keys(mapper.initializers || {}),
+          transformers: Object.keys(mapper.transformers || {}),
+          plugins: Object.keys(mapper.plugins || {})
+        },
+        { reqId, cors }
+      )
+    }
+
     throw new NotFoundError(`No route for ${method} ${pathname}`)
   }
 
