@@ -5,7 +5,7 @@ Notable changes to `@christiansmith/mapper-http`. The format follows
 [semver](https://semver.org). Pre-1.0, the public API may change between
 minor versions.
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-08-24
 
 Explicit mappings, instance-level validation, a standalone image, and
 directory-loaded mapping sources. The specification (`SPEC.md`) is the
@@ -44,7 +44,22 @@ contract; its Appendix A carries the full migration detail from 0.2.0.
   registered into the shared instance; the registered form is string-only, and
   an unknown id is a 404. This closes the 0.2.0 cross-request registry-mutation
   path. See `SPEC.md` Appendix A.
-- `@christiansmith/mapper-js` updated to `^0.3.0`.
+- `@christiansmith/mapper-js` updated to `^0.3.1` and
+  `@christiansmith/mapper-request` to `^0.2.0`; both resolve a single engine
+  version.
+
+### Security
+
+- The stock `request` plugin is built with an empty header allowlist, so no
+  caller-supplied request header is forwarded upstream; the plugin (0.2.0)
+  refuses redirects and bounds each request with a timeout.
+- The explicit-mapping validity gate rejects catastrophic regexes (via the
+  engine's pattern-safety validation) before evaluation.
+- Request bodies are bounded during the stream read, not after buffering, so an
+  unbounded chunked body cannot be read into memory in full.
+- A caller-supplied mapping is screened before it reaches the engine: a member
+  `$id` of `__proto__`/`constructor`/`prototype`, or nesting past a maximum
+  depth, is reported invalid rather than reaching the engine.
 
 ### Removed
 
