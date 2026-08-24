@@ -197,14 +197,75 @@ a live instance without evaluation rights.
 
 ## Extensions
 
-The stock surface bundles the `request` plugin from
-[mapper-request](https://jsr.io/@christiansmith/mapper-request): mappings can
-fetch remote sources with a `request` descriptor. The plugin returns its parse
-envelope — the content type, the parsed body under `json`, and cache stamps —
-so mappings address the payload under `/json`.
+An extension surface is a module whose default export is
+`{ initializers, transformers, plugins }` — the functions a mapping author can
+call by name. `GET /extensions` lists the names installed on a running server.
 
-Deployments replace or extend the surface with an `EXTENSIONS` module exporting
-`{ initializers, transformers, plugins }`.
+- **initializers** produce a value from their descriptor (e.g. a generated id).
+- **transformers** map a value to a new value inside a `transform` pipeline.
+- **plugins** are async resolvers keyed by name (e.g. `request`), invoked when a
+  mapping descriptor carries that key.
+
+See the [mapper-js](https://jsr.io/@christiansmith/mapper-js) documentation for
+the full extension contract — the exact function signatures and the async and
+purity rules. The stock surface bundles the `request` plugin from
+[mapper-request](https://jsr.io/@christiansmith/mapper-request): mappings fetch
+remote sources with a `request` descriptor, and the plugin returns its parse
+envelope (content type, the parsed body under `json`, and cache stamps), so
+mappings address the payload under `/json`.
+
+### A custom surface
+
+An `EXTENSIONS` module is plain code:
+
+```js
+// extensions.js
+export default {
+  initializers: {
+    uuid: () => crypto.randomUUID()
+  },
+  transformers: {
+    shout: (value) => String(value).toUpperCase()
+  },
+  plugins: {}
+}
+```
+
+A mapping can then initialize with `uuid` and use `shout` in a `transform`.
+
+### Replacing vs. extending the stock surface
+
+Setting `EXTENSIONS` **replaces** the bundled surface entirely — including the
+stock `request` plugin. To keep `request` alongside your own extensions,
+re-export it:
+
+```js
+// extensions.js
+import mapperRequest from '@christiansmith/mapper-request'
+
+export default {
+  initializers: { uuid: () => crypto.randomUUID() },
+  transformers: { shout: (value) => String(value).toUpperCase() },
+  plugins: {
+    request: mapperRequest.createRequest({ allowHeaders: [] })
+  }
+}
+```
+
+(A fully-qualified `jsr:@christiansmith/mapper-request@^0.2.0` import works too,
+and is a touch more robust than the bare specifier.)
+
+### In a custom image
+
+The module is what the custom-image recipe copies in — `EXTENSIONS` is a module
+path in all cases, because extensions are code:
+
+```dockerfile
+FROM ghcr.io/christiansmith/mapper-http:0.3.0
+COPY --chown=deno:deno extensions.js /data/extensions.js
+COPY --chown=deno:deno mappings/ /data/mappings/
+ENV EXTENSIONS=/data/extensions.js MAPPINGS=/data/mappings
+```
 
 ## Library usage (Deno)
 
