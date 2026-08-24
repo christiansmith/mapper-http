@@ -18,6 +18,12 @@ import {
   ValidationError
 } from './errors.js'
 
+/** Registry keys that would corrupt a plain-object registry's prototype chain. */
+const FORBIDDEN_REGISTRY_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/** Maximum nesting depth of a caller-supplied mapping. */
+const MAX_MAPPING_DEPTH = 100
+
 /** Default request-body cap (1 MiB). */
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
 
@@ -53,8 +59,8 @@ const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
  */
 function createServer(mappings, extensions, options) {
   const opts = options || {}
-  const engineExtensions = extensions || {}
-  const mapper = new Mapper(mappings || { mappings: {} }, engineExtensions)
+  const installedExtensions = extensions || {}
+  const mapper = new Mapper(mappings || { mappings: {} }, installedExtensions)
   const authenticate = opts.auth ? createAuthenticator(opts.auth) : null
   const corsConfig = opts.cors || null
   const logger = createLogger(opts.logging || {})
@@ -168,10 +174,47 @@ function createServer(mappings, extensions, options) {
   }
 
   /**
+   * readCappedBody - read a request body through the stream, aborting as soon
+   * as cumulative bytes exceed `maxBodyBytes` rather than buffering the whole
+   * body first. A chunked request, or an in-memory Request, may carry no
+   * content-length, so the byte cap is enforced during the read, not after.
+   * @param {Request} req
+   */
+  async function readCappedBody(req) {
+    if (!req.body) {
+      return new Uint8Array(0)
+    }
+
+    const reader = req.body.getReader()
+    const chunks = []
+    let total = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      total += value.byteLength
+      if (total > maxBodyBytes) {
+        await reader.cancel()
+        throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
+      }
+      chunks.push(value)
+    }
+
+    const body = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      body.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return body
+  }
+
+  /**
    * readJsonBody - read a request body under the size cap and parse it as
    * JSON. Checks the declared content-length first (a cheap early reject),
-   * then enforces the cap on the actual bytes read — a chunked request, or
-   * an in-memory Request, may carry no content-length at all.
+   * then enforces the cap on the actual bytes as they stream in.
    * @param {Request} req
    */
   async function readJsonBody(req) {
@@ -180,10 +223,7 @@ function createServer(mappings, extensions, options) {
       throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
     }
 
-    const buffer = await req.arrayBuffer()
-    if (buffer.byteLength > maxBodyBytes) {
-      throw new PayloadTooLargeError(`Request body exceeds the ${maxBodyBytes}-byte limit`)
-    }
+    const buffer = await readCappedBody(req)
 
     try {
       return JSON.parse(new TextDecoder().decode(buffer))
@@ -193,18 +233,73 @@ function createServer(mappings, extensions, options) {
   }
 
   /**
-   * documentEngine - a fresh engine for one caller-supplied document: the
-   * registered mappings plus the document's own family, registered ahead of
-   * validation so reachability checks see exactly the registry evaluation
-   * will use (the document first, then the installed mappings). The serving
-   * instance is never touched.
-   * @param {object} document
+   * exceedsDepth - true if a value nests deeper than `limit`. Iterative (an
+   * explicit stack, not recursion) so a hostile deeply-nested document cannot
+   * overflow the stack here — the very failure this guards against.
+   * @param {unknown} value
+   * @param {number} limit
    */
-  function documentEngine(document) {
-    const engine = new Mapper({ mappings: mapper.mappings }, engineExtensions)
+  function exceedsDepth(value, limit) {
+    const stack = [[value, 1]]
+    while (stack.length) {
+      const [node, depth] = stack.pop()
+      if (depth > limit) {
+        return true
+      }
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          stack.push([item, depth + 1])
+        }
+      } else if (isPlainObject(node)) {
+        for (const key of Object.keys(node)) {
+          stack.push([node[key], depth + 1])
+        }
+      }
+    }
+    return false
+  }
 
-    if (isPlainObject(document.mappings)) {
-      for (const member of Object.values(document.mappings)) {
+  /**
+   * mappingAdmissibility - screen a caller-supplied mapping before it reaches
+   * the engine, for hazards the engine turns into opaque 500s: a mapping `$id`
+   * that would corrupt a plain-object registry's prototype chain, and nesting
+   * deep enough to overflow the validator's stack. Returns a report in the
+   * mapper-js `{ valid, errors, warnings }` shape so callers render it exactly
+   * like an engine validation report.
+   * @param {object} mapping
+   */
+  function mappingAdmissibility(mapping) {
+    const errors = []
+
+    if (isPlainObject(mapping.mappings)) {
+      for (const member of Object.values(mapping.mappings)) {
+        const id = isPlainObject(member) ? member.$id : undefined
+        if (typeof id === 'string' && FORBIDDEN_REGISTRY_KEYS.has(id)) {
+          errors.push({ rule: 'ForbiddenKey', message: `"${id}" is not allowed as a mapping $id`, value: id })
+        }
+      }
+    }
+
+    if (exceedsDepth(mapping, MAX_MAPPING_DEPTH)) {
+      errors.push({ rule: 'MaxDepth', message: `mapping nesting exceeds the maximum depth of ${MAX_MAPPING_DEPTH}` })
+    }
+
+    return { valid: errors.length === 0, errors, warnings: [] }
+  }
+
+  /**
+   * mappingEngine - a fresh engine for one caller-supplied mapping: the
+   * registered mappings plus the mapping's own family, registered ahead of
+   * validation so reachability checks see exactly the registry evaluation
+   * will use (the submitted mapping first, then the installed mappings). The
+   * serving instance is never touched.
+   * @param {object} mapping
+   */
+  function mappingEngine(mapping) {
+    const engine = new Mapper({ mappings: mapper.mappings }, installedExtensions)
+
+    if (isPlainObject(mapping.mappings)) {
+      for (const member of Object.values(mapping.mappings)) {
         engine.add(member)
       }
     }
@@ -228,22 +323,23 @@ function createServer(mappings, extensions, options) {
   }
 
   /**
-   * runExplicitMapping - evaluate a caller-supplied mapping document.
+   * runExplicitMapping - evaluate a caller-supplied mapping.
    *
    * Gate order: the capability must be enabled (`map.explicit`), the caller
-   * must satisfy `map.explicit.claims`, and the document must validate —
-   * an invalid document gets the full report at 422, never an evaluation
+   * must satisfy `map.explicit.claims`, and the mapping must validate —
+   * an invalid mapping gets the full report at 422, never an evaluation
    * attempt. Evaluation is stateless: a fresh engine is built for this call
-   * from the registered mappings, the document's own family is registered
-   * into it (so references resolve document-first, then installed), and the
-   * serving instance is never touched — nothing outlives the request.
-   * @param {object} document
+   * from the registered mappings, the submitted mapping's own family is
+   * registered into it (so references resolve submitted-first, then
+   * installed), and the serving instance is never touched — nothing outlives
+   * the request.
+   * @param {object} mapping
    * @param {unknown} input
    * @param {string} reqId
    * @param {Record<string, string>} cors
    * @param {object|null} identity
    */
-  async function runExplicitMapping(document, input, reqId, cors, identity) {
+  async function runExplicitMapping(mapping, input, reqId, cors, identity) {
     if (!explicitEnabled) {
       throw new ForbiddenError('The explicit mapping form is not enabled on this deployment')
     }
@@ -251,14 +347,22 @@ function createServer(mappings, extensions, options) {
       throw new ForbiddenError('Caller lacks the claims required for explicit mappings')
     }
 
-    const engine = documentEngine(document)
+    // Screen for engine-crashing hazards (prototype-key $ids, over-deep nesting)
+    // before the mapping reaches the engine, so they render as a 422 report
+    // rather than an opaque 500.
+    const admissibility = mappingAdmissibility(mapping)
+    if (!admissibility.valid) {
+      throw new InvalidMappingDocumentError(admissibility)
+    }
 
-    const report = engine.validate(document)
+    const engine = mappingEngine(mapping)
+
+    const report = engine.validate(mapping)
     if (!report.valid) {
       throw new InvalidMappingDocumentError(report)
     }
 
-    const result = await engine.map(document, input, { identity })
+    const result = await engine.map(mapping, input, { identity })
     return resultResponse(result, reqId, cors)
   }
 
@@ -357,7 +461,13 @@ function createServer(mappings, extensions, options) {
     }
 
     if (isPlainObject(mapping)) {
-      const engine = documentEngine(mapping)
+      // A validation report is always 200, so an engine-crashing hazard is
+      // reported as invalid rather than reaching the engine.
+      const admissibility = mappingAdmissibility(mapping)
+      if (!admissibility.valid) {
+        return json(admissibility, { reqId, cors })
+      }
+      const engine = mappingEngine(mapping)
       return json(engine.validate(mapping), { reqId, cors })
     }
 

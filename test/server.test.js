@@ -655,3 +655,68 @@ Deno.test('an explicit document carrying a catastrophic pattern is rejected 422'
     true
   )
 })
+
+// --- F-04: the body cap bounds streaming, not just parsing ---
+
+Deno.test('a chunked body over the cap is rejected without buffering it all', async () => {
+  let pulled = 0
+  const stream = new ReadableStream({
+    pull(controller) {
+      pulled++
+      controller.enqueue(new Uint8Array(1024))
+      if (pulled > 100) controller.close()
+    }
+  })
+  const server = testServer({ maxBodyBytes: 4096 })
+  const req = new Request('http://x/map', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: stream,
+    duplex: 'half'
+  })
+  const res = await server.fetch(req)
+  assertEquals(res.status, 413)
+  await res.body?.cancel()
+  // The reader must stop early, not drain all 100 chunks into memory.
+  assertEquals(pulled < 20, true)
+})
+
+// --- F-05: a dangerous registry key is a clean 422, never a 500 ---
+
+Deno.test('a __proto__ member $id is rejected 422, not a 500', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const document = {
+    $id: 'p',
+    mappings: { evil: { $id: '__proto__', mapping: { '/x': '/' } } }
+  }
+  const res = await server.fetch(mapRequest({ mapping: document, input: {} }))
+  assertEquals(res.status, 422)
+  const body = await res.json()
+  assertEquals(body.code, 'InvalidMappingDocument')
+  assertEquals(body.report.valid, false)
+  assertEquals(typeof {}.toString, 'function')
+})
+
+Deno.test('/validate reports a __proto__ member $id as invalid at 200', async () => {
+  const server = testServer()
+  const document = {
+    $id: 'p',
+    mappings: { evil: { $id: 'constructor', mapping: { '/x': '/' } } }
+  }
+  const res = await server.fetch(validateRequest({ mapping: document }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, false)
+})
+
+// --- F-07: an over-deep document is a 422, not a 500 ---
+
+Deno.test('a document nested past the depth cap is rejected 422', async () => {
+  const server = testServer({ map: { explicit: true } })
+  let nested = { '/x': '/' }
+  for (let i = 0; i < 300; i++) nested = { '/x': { mapping: nested } }
+  const res = await server.fetch(mapRequest({ mapping: { mapping: nested }, input: {} }))
+  assertEquals(res.status, 422)
+  const body = await res.json()
+  assertEquals(body.code, 'InvalidMappingDocument')
+})
