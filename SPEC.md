@@ -191,7 +191,7 @@ Two-plane model restated in §1.2. Server-plane codes:
 ## 7. Security considerations
 
 - **Explicit documents change the trust posture.** A caller-supplied document drives the installed extensions — including any plugin that performs network requests — so the risk shape is SSRF-like. Mitigations in this specification: explicit form disabled unless enabled, independently claims-gated, document-validity gated, and strictly stateless so no submission outlives its request.
-- **The mapping-path health canary runs unauthenticated.** `health.mapping` should name a cheap, side-effect-free mapping; a canary that performs requests or expensive work is invocable by any caller.
+- **The mapping-path health canary runs unauthenticated.** `health.mapping` should name a cheap, side-effect-free mapping; a canary that performs requests or expensive work is invocable by any caller. `health.timeout` bounds the *response* (a 503 is returned on expiry), not the underlying evaluation, which is not cancelled — a request-performing canary is bounded instead by the request plugin's own timeout, and synchronous work cannot be interrupted at all. Keep the canary cheap.
 - **Egress constraints** (allowlists for request-performing plugins) are acknowledged useful hardening and deliberately out of scope for this version.
 - **Baseline protections:** algorithm-allowlisted JWT validation, request-body caps, 5xx detail suppression, and a redacting logger.
 
