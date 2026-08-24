@@ -1,0 +1,20 @@
+# Run the test suite on every push and pull request.
+name: test
+
+on:
+  # Branch pushes only. A bare `push:` also matches tag pushes, so a release
+  # tag (v*) would fire this suite redundantly on a tree the branch runs
+  # already covered. The release workflow owns tags.
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno task test

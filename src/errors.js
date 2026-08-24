@@ -43,6 +43,18 @@ export class ValidationError extends ApiError {
   }
 }
 
+export class InvalidMappingDocumentError extends ApiError {
+  /**
+   * Carries the full mapper-js validation report when an explicit mapping
+   * document fails the validity gate: the document is never evaluated, and
+   * the report — not a mapping result — is what the caller gets back.
+   * @param {{ valid: boolean, errors: unknown[], warnings: unknown[] }} report
+   */
+  constructor(report) {
+    super('InvalidMappingDocument', 'The submitted mapping document is invalid', 422, { report })
+  }
+}
+
 export class UnauthorizedError extends ApiError {
   /** @param {string} message */
   constructor(message) {
@@ -75,5 +87,12 @@ export class PayloadTooLargeError extends ApiError {
   /** @param {string} message */
   constructor(message) {
     super('PayloadTooLarge', message, 413)
+  }
+}
+
+export class UnavailableError extends ApiError {
+  /** @param {string} message */
+  constructor(message) {
+    super('Unavailable', message, 503)
   }
 }

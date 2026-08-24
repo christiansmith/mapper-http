@@ -4,104 +4,243 @@
 
 `mapper-http` exposes a [Mapper](https://jsr.io/@christiansmith/mapper-js) instance
 over HTTP. A deployment supplies its own **mappings** and **extensions**; the server
-provides bearer-token authentication, CORS, and a small set of endpoints for running
-mappings. It is deliberately generic — it knows nothing about any particular data
-domain.
+adds bearer-token authentication, CORS, structured logging, request-body limits, and
+a small set of endpoints for running, validating, and inspecting mappings. It is
+deliberately generic. It knows nothing about any particular data domain.
 
-## Status
+## Quickstart
 
-JWT (bearer) authentication with an algorithm allowlist, CORS, structured
-logging, request ids, body-size limits, and a generic mapping endpoint.
-Declarative per-route bindings (a `routes` config) and request-envelope
-materialization are planned.
+The published image runs standalone. It serves bundled example mappings and the
+stock extension surface with no configuration:
 
-## Usage (Deno)
+```bash
+docker run -p 3333:3333 ghcr.io/christiansmith/mapper-http:0.3.0
+
+curl -X POST localhost:3333/map \
+  -H 'content-type: application/json' \
+  -d '{"mapping":"greet","input":{"message":"hello"}}'
+# {"text":"hello","valid":true,"errors":[]}
+```
+
+### Bring your own mappings, no image build
+
+Mount a directory of mapping documents and point `MAPPINGS` at it:
+
+```bash
+docker run -p 3333:3333 \
+  -v ./mappings:/data/mappings \
+  -e MAPPINGS=/data/mappings \
+  ghcr.io/christiansmith/mapper-http:0.3.0
+```
+
+### Custom images
+
+Layer deployment assets on the stock base. No entrypoint code is involved:
+
+```dockerfile
+FROM ghcr.io/christiansmith/mapper-http:0.3.0
+COPY --chown=deno:deno mappings/ /data/mappings/
+COPY --chown=deno:deno extensions.js /data/extensions.js
+ENV MAPPINGS=/data/mappings EXTENSIONS=/data/extensions.js
+```
+
+## Endpoints
+
+| Method | Path              | Auth | Purpose                                   |
+| ------ | ----------------- | ---- | ----------------------------------------- |
+| GET    | `/health`         | no   | process liveness (cheap)                  |
+| GET    | `/health/mapping` | no   | mapping-path health (canary)              |
+| POST   | `/map`            | yes* | evaluate a registered or explicit mapping |
+| POST   | `/validate`       | yes* | validate a document or registered mapping |
+| GET    | `/mappings`       | yes* | list registered mappings                  |
+| GET    | `/extensions`     | yes* | list installed extension names            |
+
+\* when auth is configured. The write namespace `POST`/`PUT`/`DELETE /mappings/*`
+is reserved for future persistence operations and returns 404 in this version.
+
+### `POST /map`
+
+One request key, `mapping`, discriminated by type.
+
+**Registered form** — a string names a registered mapping:
+
+```json
+{ "mapping": "greet", "input": { "message": "hello" } }
+```
+
+An unknown id is a 404. The result is returned **as data** at 200, including its
+own `valid` and `errors` fields. A deployment can promote a `valid:false` result
+into a client error with `map.invalidStatus`.
+
+**Explicit form** — an object is a caller-supplied mapping document (a single
+descriptor or a compound document whose members travel together):
+
+```json
+{
+  "mapping": {
+    "$id": "greet",
+    "mappings": {
+      "greet": { "$id": "greet", "mapping": { "/text": "/message" } }
+    }
+  },
+  "input": { "message": "hello" }
+}
+```
+
+The explicit form is **off by default**. Enable it with `map.explicit`, and gate
+it separately with `map.explicit.claims`. A submitted document is validated
+before evaluation; an invalid document returns 422 with the full validation
+report and is never evaluated. Evaluation is stateless: references resolve
+against the document first, then the installed registry, and nothing a caller
+submits registers into the server or is observable to any other request.
+
+Any other type for `mapping`, or a missing `mapping`, is a 400.
+
+### `POST /validate`
+
+Instance-level validation with the same type discrimination as `/map`: an
+object validates a caller-supplied document against this instance, including
+referential reachability (do the referenced transformer names, plugin keys, and
+`$ref` targets exist here?); a string validates an already-registered mapping
+the same way. The response is always 200 with the full report
+(`valid`, `errors`, `warnings`), even when `valid` is false. A validation
+report is data, not an error. 4xx is reserved for the request itself being
+malformed.
+
+### `GET /mappings`
+
+The registered mappings. Explicit submissions never appear here.
+
+### `GET /extensions`
+
+The installed extension surface a mapping author writes against:
+
+```json
+{ "initializers": [], "transformers": [], "plugins": ["request"] }
+```
+
+Names only. Never configuration, code, or values.
+
+### `GET /health` and `GET /health/mapping`
+
+`/health` is cheap process liveness. `/health/mapping` evaluates a canary
+mapping through the full engine and reports 200 only when evaluation completes
+within `health.timeout` (default 5000 ms); otherwise 503. The canary is
+`health.mapping` (a registered mapping id) when configured, else a trivial
+echo. Process liveness does not imply mapping-path liveness; the container
+`HEALTHCHECK` targets this endpoint. Health endpoints are unauthenticated, so
+choose a cheap canary without side effects.
+
+## Configuration
+
+### Environment
+
+| Variable       | Meaning                                                                 | Default                  |
+| -------------- | ----------------------------------------------------------------------- | ------------------------ |
+| `PORT`         | listen port                                                              | `3333`                   |
+| `MAPPINGS`     | mapping source: module path, document file, or directory                 | bundled examples         |
+| `EXTENSIONS`   | module path exporting extensions                                         | bundled surface          |
+| `OPTIONS`      | the full options object as JSON                                          | `{}`                     |
+| `OPTIONS_FILE` | path to a file holding the options object (`.json`, `.yaml`, `.yml`)     | unset                    |
+
+`PORT`/`MAPPINGS`/`EXTENSIONS` are bootstrap; `OPTIONS` (or `OPTIONS_FILE`) is
+the canonical channel for everything `createServer` accepts. There are no
+per-option environment variables. Setting both `OPTIONS` and `OPTIONS_FILE`, or
+supplying a value that does not parse, fails startup loudly.
+
+### Mapping sources
+
+`MAPPINGS` accepts three forms, discriminated by what the path is:
+
+1. **Module path** (`.js`/`.ts`) — the module's default export is the mappings
+   descriptor.
+2. **Document file** (`.json`, `.yaml`, `.yml`) — the file is one mapping
+   document: a descriptor object or a compound document.
+3. **Directory** — scanned recursively for document files in lexicographic path
+   order. Every mapping they contain is registered by its `$id`. The same `$id`
+   from two files is a startup error naming both files; non-document files are
+   ignored with a warning.
+
+`EXTENSIONS` is a module path in all cases: extensions are code.
+
+### Options
+
+The options object, via `OPTIONS`/`OPTIONS_FILE` or `createServer`:
+
+- `auth` — one key strategy plus optional constraints. Omit to disable auth.
+  - `secret` (HS256) **or** `publicKey` (SPKI PEM; RS256/ES256/EdDSA) **or**
+    `jwksUri` (asymmetric, with kid resolution and caching).
+  - `algorithm` — a single algorithm or an allowlist. Defaults to `HS256` for a
+    secret, and `RS256, ES256, EdDSA` (no HMAC, preventing algorithm confusion)
+    for a public key or JWKS.
+  - `issuer`, `audience` — expected claims. `clockSkew` — tolerance in seconds.
+- `cors` — `{ origin, methods, headers }`. Omit to disable CORS. Bearer-only:
+  credentials are not enabled.
+- `logging` — `{ format: 'json' | 'pretty', level, slowThreshold }`. One
+  structured line per request; `Authorization` is always redacted.
+- `errorDetail` — `'minimal'` (default) or `'full'`. In `minimal`, 5xx detail is
+  replaced with a generic message; the full error is logged server-side.
+- `maxBodyBytes` — reject larger request bodies with 413 (default 1 MiB).
+- `requestIdPrefix` — prefix for generated request ids (default `req_`).
+- `map` — `{ invalidStatus?, claims?, explicit? }`. `claims` gates `POST /map`;
+  `explicit` enables the explicit form (`true`, or `{ claims }` to gate it
+  separately — checked in addition to `map.claims`).
+- `validate` — `{ claims? }` gates `POST /validate`.
+- `health` — `{ mapping?, timeout? }` canary configuration for
+  `GET /health/mapping`.
+
+Per-capability claims let an operator run "registered mappings only" (explicit
+disabled), "explicit for these callers" (claims on the explicit form), or
+"validate but never evaluate" (validation claims granted, explicit off) — that
+last posture is how an agent can propose, validate, and repair mappings against
+a live instance without evaluation rights.
+
+## Extensions
+
+The stock surface bundles the `request` plugin from
+[mapper-request](https://jsr.io/@christiansmith/mapper-request): mappings can
+fetch remote sources with a `request` descriptor. The plugin returns its parse
+envelope — the content type, the parsed body under `json`, and cache stamps —
+so mappings address the payload under `/json`.
+
+Deployments replace or extend the surface with an `EXTENSIONS` module exporting
+`{ initializers, transformers, plugins }`.
+
+## Library usage (Deno)
 
 ```js
-import createServer from '@christiansmith/mapper-http'
+import createServer, { loadMappings } from '@christiansmith/mapper-http'
 
+const mappings = await loadMappings('./mappings')
 const server = createServer(mappings, extensions, {
-  cors: { origin: ['https://example.org'] },
-  auth: {
-    jwksUri: 'https://issuer.example/.well-known/jwks.json',
-    issuer: 'https://issuer.example',
-    audience: 'mapper-http'
-  },
+  auth: { jwksUri: 'https://issuer.example/.well-known/jwks.json' },
   logging: { format: 'json' },
-  map: { invalidStatus: 422 }
+  map: { explicit: { claims: { role: ['author'] } } }
 })
 
 server.listen({ port: 3333 })
 ```
 
-Run the bundled example:
-
-```bash
-deno task dev      # serves an echo mapping on :3333, CORS open, no auth
-deno task test
-```
-
-## API
-
-### `POST /map`
-
-Run a registered mapping over a supplied input (the generic escape hatch).
-
-```json
-{ "mapping": "<mapping-id>", "input": <any> }
-```
-
-Returns the mapper result **as data**, at `200` — including its own `valid` and
-`errors` fields for the caller to inspect. A mapping's validation state is not a
-transport error by default. A deployment that uses a mapping to validate the
-request body can opt to promote a `valid:false` result into a client error with
-`map.invalidStatus` (see Configuration); the response is then a
-`ValidationError` envelope carrying the mapping's `errors`.
-
-### `GET /mappings`
-
-List the registered mappings.
-
-### `GET /health`
-
-Liveness check (unauthenticated): `{ "status": "ok" }`.
-
-## Configuration
-
-`createServer(mappings, extensions, options)`
-
-- `mappings` — a Mapper descriptor (`{ $id, mappings }`).
-- `extensions` — `{ initializers, transformers, plugins }`.
-- `options.auth` — one key strategy plus optional constraints. Omit to disable
-  auth (local dev).
-  - `secret` (HS256) **or** `publicKey` (SPKI PEM; RS256/ES256/EdDSA) **or**
-    `jwksUri` (asymmetric, with kid resolution + caching).
-  - `algorithm` — a single algorithm or an allowlist (array, or comma-separated
-    string). Defaults to `HS256` for a secret, and `RS256, ES256, EdDSA` (no
-    HMAC, to prevent algorithm confusion) for a public key or JWKS.
-  - `issuer`, `audience` — expected claims (string or array). `clockSkew` —
-    tolerance in seconds.
-- `options.cors` — `{ origin, methods, headers }`. `origin` may be `'*'`, a string, or
-  an array. Omit to disable CORS. Bearer-only: credentials are not enabled.
-- `options.logging` — `{ format: 'json' | 'pretty', level, slowThreshold }`.
-  Defaults to JSON at `info`. One structured line per request (method, path,
-  status, duration); `Authorization` is always redacted.
-- `options.errorDetail` — `'minimal'` (default) or `'full'`. In `minimal`, 5xx
-  detail is replaced with a generic message to the client and the full error is
-  logged server-side; 4xx messages are always returned.
-- `options.maxBodyBytes` — reject larger request bodies with `413` (default 1 MiB).
-- `options.requestIdPrefix` — prefix for generated request ids (default `req_`).
-- `options.map` — `{ invalidStatus?, claims? }`. `invalidStatus` promotes a
-  mapping's `valid:false` result into a `ValidationError` at that status (e.g.
-  `422`); unset, the result is returned as data at `200`. `claims` gates
-  `POST /map` (e.g. `{ role: ['admin'] }` → `403` without it).
-
 ## Errors
 
-Server errors are returned as `{ "code": "<Code>", "message": "<message>", "requestId": "<id>" }`
-(validation errors add an `errors` array) with status codes `400`, `401`,
-`403`, `404`, `405`, `413`, `422`, and `500`. Every response — success or
-error — carries an `X-Request-Id` header.
+Server errors are returned as
+`{ "code": "<Code>", "message": "<message>", "requestId": "<id>" }` with status
+codes 400, 401, 403, 404, 405, 413, 422, 500, and 503. A 422
+`InvalidMappingDocument` carries the full validation report under `report`;
+a `ValidationError` from `map.invalidStatus` carries the mapping's `errors`.
+Every response carries an `X-Request-Id` header. Mapping results — including
+`valid: false` results — are data at 200, not errors.
+
+## Development
+
+```bash
+deno task dev     # bundled examples on :3333, CORS open, pretty logs, no auth
+deno task test    # the test suite
+./test/smoke.sh   # build the image and smoke it end to end
+```
+
+The dev workflow and the container run the same entrypoint with defaulted
+environment.
 
 ## License
 

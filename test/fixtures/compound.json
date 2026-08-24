@@ -1,0 +1,6 @@
+{
+  "$id": "family",
+  "mappings": {
+    "inner": { "$id": "inner", "mapping": { "/out": "/in" } }
+  }
+}
