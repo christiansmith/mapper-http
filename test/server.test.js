@@ -635,3 +635,23 @@ Deno.test('CORS preflight stays open when auth is configured', async () => {
   assertEquals(res.status, 204)
   await res.body?.cancel()
 })
+
+// --- regression: an explicit pattern that used to freeze the loop is now
+// rejected by the validity gate (mapper-js safe-regex screen). ---
+
+Deno.test('an explicit document carrying a catastrophic pattern is rejected 422', async () => {
+  const server = testServer({ map: { explicit: true } })
+  const document = {
+    $id: 'redos',
+    mapping: { '/out': { source: '/s', pattern: '(a+)+$' } }
+  }
+  const res = await server.fetch(mapRequest({ mapping: document, input: { s: 'aaaaaaaaaaaaaaaaaaaaaaaaaa!' } }))
+  assertEquals(res.status, 422)
+  const body = await res.json()
+  assertEquals(body.code, 'InvalidMappingDocument')
+  assertEquals(body.report.valid, false)
+  assertEquals(
+    body.report.errors.some((e) => e.rule === 'KW-pattern-2'),
+    true
+  )
+})

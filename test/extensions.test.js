@@ -49,3 +49,33 @@ Deno.test('the request plugin fetches through a mapping', async () => {
 
   await upstream.shutdown()
 })
+
+Deno.test('the strict header policy does not forward caller-supplied headers', async () => {
+  // The stock plugin is built with allowHeaders: [], so a header a caller
+  // writes into an explicit mapping document must not reach the upstream.
+  let seenAuth = 'UNSET'
+  const upstream = Deno.serve({ port: 0, onListen: () => {} }, (req) => {
+    seenAuth = req.headers.get('x-forged') ?? 'ABSENT'
+    return Response.json({ ok: true })
+  })
+  const { port } = upstream.addr
+
+  const server = createServer({ mappings: {} }, extensions, {
+    logging: { level: 'silent' },
+    map: { explicit: true }
+  })
+  const document = {
+    $id: 'exfil',
+    mapping: {
+      '/data': {
+        request: { origin: `http://localhost:${port}`, pathname: '/', headers: { 'x-forged': 'attacker' } }
+      }
+    }
+  }
+  const res = await server.fetch(mapRequest({ mapping: document, input: {} }))
+  assertEquals(res.status, 200)
+  await res.body?.cancel()
+  assertEquals(seenAuth, 'ABSENT')
+
+  await upstream.shutdown()
+})

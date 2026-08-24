@@ -1,24 +1,24 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@christiansmith/mapper-js@0.3": "0.3.0",
-    "jsr:@christiansmith/mapper-request@~0.1.3": "0.1.3",
+    "jsr:@christiansmith/mapper-js@~0.3.1": "0.3.1",
+    "jsr:@christiansmith/mapper-request@0.2": "0.2.0",
     "jsr:@std/assert@1": "1.0.11",
     "jsr:@std/internal@^1.0.5": "1.0.13",
     "jsr:@std/yaml@1": "1.2.0",
-    "npm:@christiansmith/mapper-js@~0.1.1": "0.1.1",
+    "npm:@christiansmith/mapper-js@~0.3.1": "0.3.1",
     "npm:cheerio@^1.0.0-rc.12": "1.2.0",
-    "npm:fast-xml-parser@^5.2.1": "5.9.3",
+    "npm:fast-xml-parser@^5.2.1": "5.11.0",
     "npm:jose@5": "5.10.0"
   },
   "jsr": {
-    "@christiansmith/mapper-js@0.3.0": {
-      "integrity": "78b543c46944ba96c1d32c6e8ce6f9af8d74fc350e7d57a92f2316416ff0b58c"
+    "@christiansmith/mapper-js@0.3.1": {
+      "integrity": "b7a05d707f5dd700a3c347da12ff3d1b3572fbdd8115f5b4d28344de4a5ce179"
     },
-    "@christiansmith/mapper-request@0.1.3": {
-      "integrity": "44e797d22dad5599b10892cb3e474629d0b9b735b4106e3c8868acf61cd83255",
+    "@christiansmith/mapper-request@0.2.0": {
+      "integrity": "71c99bae6dc7e115f709ba736e213f01c3fa4276aec1606b99992218588aaf3a",
       "dependencies": [
-        "npm:@christiansmith/mapper-js@~0.1.1",
+        "npm:@christiansmith/mapper-js@~0.3.1",
         "npm:cheerio",
         "npm:fast-xml-parser"
       ]
@@ -37,11 +37,11 @@
     }
   },
   "npm": {
-    "@christiansmith/mapper-js@0.1.1": {
-      "integrity": "sha512-nTha7ZdlSQkcri8Gd7+hXpEIdfDS3wS14/kLFIEbhl3iRYmhWoURU7vqP2tee2hfYpiP7ju8c8/v7GYXSBrjfA=="
+    "@christiansmith/mapper-js@0.3.1": {
+      "integrity": "sha512-W9JNfwBvXFdmyRvF9Fc+j3FfeEZcv3367vb2zhHUK80W8z/qW9EXOnOzwhdf72MZ0mNHSMe3f57Z3lnHC9QR1Q=="
     },
-    "@nodable/entities@2.2.0": {
-      "integrity": "sha512-9uGyhaQavEUMC8AIddIjau4NsnsXhou+j5sBAGojCM1oxmQpVKTWR/9JxABD6UAv12vpIms55fPZKFQEhG6uBg=="
+    "@nodable/entities@3.0.0": {
+      "integrity": "sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw=="
     },
     "anynum@1.0.1": {
       "integrity": "sha512-N6//FLET/tXYNM/F6ABca1oH6fWB+KlTt909Le28WMDBk8oaT4vY17DCrwg2MvmuqUKt3Ni4N5dGJ/EoBgcO6A=="
@@ -134,18 +134,18 @@
       "integrity": "sha512-pIM/1n3ntFXKYrUZwW7QCK0gAW7XY+wzj1YMIV3tLDvPj/V+zTGJK5e3/4WJfwj0qWw2ElNXiTixda/R+3YSug==",
       "dependencies": [
         "path-expression-matcher",
-        "xml-naming@0.3.0"
+        "xml-naming"
       ]
     },
-    "fast-xml-parser@5.9.3": {
-      "integrity": "sha512-brCNCeScma/kqa54J4PIDriSSSLssRkuYaUCpvHJulGc3HGI/xxKUCTDcYkAdqJsyb//ydpbxecjC3hB9+tb/g==",
+    "fast-xml-parser@5.11.0": {
+      "integrity": "sha512-9IGxMqvqLOnqP+Egi1nqDHKv5k8aZ7r9n558enxcucmyVGEBNPAU+MOg/8jPIS7rO7sSq4gFm1/nHtiaubMruw==",
       "dependencies": [
         "@nodable/entities",
         "fast-xml-builder",
         "is-unsafe",
         "path-expression-matcher",
         "strnum",
-        "xml-naming@0.1.0"
+        "xml-naming"
       ],
       "bin": true
     },
@@ -164,8 +164,8 @@
         "safer-buffer"
       ]
     },
-    "is-unsafe@1.0.1": {
-      "integrity": "sha512-CLK2+VdgERgD96EYm5lUQssZYlRg2tkZnbsxZoacmSiRxiFJ4Nk4SzjCl+Ur+v3kXIY9dTIdb3IH22y1mZ56LA=="
+    "is-unsafe@2.0.2": {
+      "integrity": "sha512-HgbIHPBH0KHHCcjLfGsCvhtPTVxjaAZlXjwdz7/GQC40SjSe4sfQsar8J5VFo8JOSbarkpV0OLG95bbaNd9aAQ=="
     },
     "jose@5.10.0": {
       "integrity": "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="
@@ -207,8 +207,8 @@
         "anynum"
       ]
     },
-    "undici@7.28.0": {
-      "integrity": "sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA=="
+    "undici@7.29.0": {
+      "integrity": "sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw=="
     },
     "whatwg-encoding@3.1.1": {
       "integrity": "sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==",
@@ -220,17 +220,14 @@
     "whatwg-mimetype@4.0.0": {
       "integrity": "sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg=="
     },
-    "xml-naming@0.1.0": {
-      "integrity": "sha512-k8KO9hrMyNk6tUWqUfkTEZbezRRpONVOzUTnc97VnCvyj6Tf9lyUR9EDAIeiVLv56jsMcoXEwjW8Kv5yPY52lw=="
-    },
     "xml-naming@0.3.0": {
       "integrity": "sha512-ghig2TBE/H11aOVgmahA3MhimvkBr6JIYknH/Dhdk10nXwdbIqBJsbfMxpvFPG8bAw77gN29aQWvKpmVoPlvPQ=="
     }
   },
   "workspace": {
     "dependencies": [
-      "jsr:@christiansmith/mapper-js@0.3",
-      "jsr:@christiansmith/mapper-request@~0.1.3",
+      "jsr:@christiansmith/mapper-js@~0.3.1",
+      "jsr:@christiansmith/mapper-request@0.2",
       "jsr:@std/assert@1",
       "jsr:@std/yaml@1",
       "npm:jose@5"
