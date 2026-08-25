@@ -409,6 +409,37 @@ Deno.test('a document referencing an installed mapping validates as reachable', 
   assertEquals((await res.json()).valid, true)
 })
 
+Deno.test('a document naming an unknown transformer reports it, at 200', async () => {
+  // Reachability covers extension names, not just $ref: an unknown
+  // transformer in string form is a validation error against this
+  // instance's surface, never a silent evaluation-time no-op.
+  const server = testServer()
+  const document = {
+    $id: 't',
+    mapping: { '/out': { source: '/in', transform: 'definitelyNotReal' } }
+  }
+  const res = await server.fetch(validateRequest({ mapping: document }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, false)
+  assertEquals(body.errors[0].rule, 'KW-transform-1')
+})
+
+Deno.test('a document naming an installed transformer validates clean', async () => {
+  const mappings = { $id: 'test', mappings: {} }
+  const extensions = { transformers: { shout: (value) => String(value).toUpperCase() } }
+  const server = createServer(mappings, extensions, { logging: { level: 'silent' } })
+  const document = {
+    $id: 't',
+    mapping: { '/out': { source: '/in', transform: 'shout' } }
+  }
+  const res = await server.fetch(validateRequest({ mapping: document }))
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.valid, true)
+  assertEquals(body.errors, [])
+})
+
 Deno.test('a document referencing an unknown mapping reports it, at 200', async () => {
   const server = testServer()
   const document = {

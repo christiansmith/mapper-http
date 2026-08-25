@@ -50,6 +50,36 @@ Deno.test('the request plugin fetches through a mapping', async () => {
   await upstream.shutdown()
 })
 
+Deno.test('the request plugin resolves the url from source data', async () => {
+  // A URL that arrives as data: the mapping selects it with source and
+  // the plugin resolves it via url: { source } instead of authoring
+  // origin/pathname in the descriptor.
+  const upstream = Deno.serve({ port: 0, onListen: () => {} }, () => Response.json({ record: 'found' }))
+  const { port } = upstream.addr
+
+  const mappings = {
+    $id: 'test',
+    mappings: {
+      resolving: {
+        $id: 'resolving',
+        mapping: {
+          '/data': { source: '/target', request: { url: { source: '' } } }
+        }
+      }
+    }
+  }
+  const server = createServer(mappings, extensions, { logging: { level: 'silent' } })
+
+  const res = await server.fetch(
+    mapRequest({ mapping: 'resolving', input: { target: `http://localhost:${port}/item/1` } })
+  )
+  assertEquals(res.status, 200)
+  const body = await res.json()
+  assertEquals(body.data.json.record, 'found')
+
+  await upstream.shutdown()
+})
+
 Deno.test('the strict header policy does not forward caller-supplied headers', async () => {
   // The stock plugin is built with allowHeaders: [], so a header a caller
   // writes into an explicit mapping document must not reach the upstream.
