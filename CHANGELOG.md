@@ -5,6 +5,32 @@ Notable changes to `@christiansmith/mapper-http`. The format follows
 [semver](https://semver.org). Pre-1.0, the public API may change between
 minor versions.
 
+## [0.3.1] — 2026-08-24
+
+Dependency updates that deliver two fixes reported from the field, both
+reachable through the stock image. No HTTP surface changes.
+
+### Changed
+
+- `@christiansmith/mapper-js` `^0.3.2`: `POST /validate` (and the
+  explicit-mapping gate) now reports an unknown transformer name in
+  string form as a validation error [KW-transform-1], completing the
+  referential-reachability promise of SPEC §3.3. Previously such a
+  document validated clean and the missing transformer was silently
+  skipped at evaluation, so results could degrade with `valid: true`.
+- `@christiansmith/mapper-request` `^0.3.0`: the stock `request` plugin
+  accepts `url: { source | target | input | output }`, resolving the
+  request URL from data at a named scope. This restores an expressible
+  form for fetching a URL that arrives as data, removed by the 0.2.0
+  pathname-encoding hardening, and extends it to four scopes. The
+  descriptor-authored `origin`/`pathname` form is unchanged.
+
+### Added
+
+- Tests pin both behaviors end to end: `/validate` reports unknown
+  transformer names against the instance surface, and the stock plugin
+  fetches through `url: { source }`.
+
 ## [0.3.0] — 2026-08-24
 
 Explicit mappings, instance-level validation, a standalone image, and
