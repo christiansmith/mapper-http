@@ -5,7 +5,7 @@ Notable changes to `@christiansmith/mapper-http`. The format follows
 [semver](https://semver.org). Pre-1.0, the public API may change between
 minor versions.
 
-## [0.3.2] — unreleased
+## [0.3.2] — 2026-09-02
 
 Makes the redirect policy introduced by mapper-request 0.4.0 consumable
 from the stock image as pure configuration, and classifies refused
