@@ -14,12 +14,30 @@ import {
   MethodNotAllowedError,
   NotFoundError,
   PayloadTooLargeError,
+  RedirectRefusedError,
   UnavailableError,
   ValidationError
 } from './errors.js'
 
 /** Registry keys that would corrupt a plain-object registry's prototype chain. */
 const FORBIDDEN_REGISTRY_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * classifyMapError - promote typed plugin outcomes to client-visible
+ * ApiErrors. A refused redirect (mapper-request `E_REDIRECT_REFUSED`) is a
+ * policy outcome meeting an ordinary web condition, not an engine fault;
+ * detection is by the `code` string — the cross-module contract — never
+ * `instanceof`. Everything else rethrows untouched.
+ * @param {unknown} err
+ * @returns {never}
+ */
+function classifyMapError(err) {
+  if (/** @type {any} */ (err)?.code === 'E_REDIRECT_REFUSED') {
+    const { message, location } = /** @type {any} */ (err)
+    throw new RedirectRefusedError(message, location)
+  }
+  throw err
+}
 
 /** Maximum nesting depth of a caller-supplied mapping. */
 const MAX_MAPPING_DEPTH = 100
@@ -362,7 +380,12 @@ function createServer(mappings, extensions, options) {
       throw new InvalidMappingDocumentError(report)
     }
 
-    const result = await engine.map(mapping, input, { identity })
+    let result
+    try {
+      result = await engine.map(mapping, input, { identity })
+    } catch (err) {
+      classifyMapError(err)
+    }
     return resultResponse(result, reqId, cors)
   }
 
@@ -388,7 +411,12 @@ function createServer(mappings, extensions, options) {
         throw new NotFoundError(`No mapping registered as "${mapping}"`)
       }
 
-      const result = await mapper.map(mapping, input, { identity })
+      let result
+      try {
+        result = await mapper.map(mapping, input, { identity })
+      } catch (err) {
+        classifyMapError(err)
+      }
       return resultResponse(result, reqId, cors)
     }
 

@@ -214,6 +214,38 @@ remote sources with a `request` descriptor, and the plugin returns its parse
 envelope (content type, the parsed body under `json`, and cache stamps), so
 mappings address the payload under `/json`.
 
+### Following redirects
+
+The stock `request` plugin refuses every redirect: a 3xx response fails the
+mapping with a `422 RedirectRefused` error naming the target in `location`.
+That default is right for untrusted mappings, but many publishers 301 every
+URL to a canonical form (most commonly adding a trailing slash), which makes
+refusal fail resolvable URLs. A deployment can opt in to bounded following in
+its extensions module:
+
+```js
+// extensions.js
+import mapperRequest from '@christiansmith/mapper-request'
+
+export default {
+  initializers: {},
+  transformers: {},
+  plugins: {
+    request: mapperRequest.createRequest({ allowHeaders: [], redirect: 'follow' })
+  }
+}
+```
+
+Following is deliberately narrow: GET requests only, at most `maxRedirects`
+hops (default 2), targets restricted to the same origin plus the http→https
+upgrade of the identical hostname on default ports (`redirectHttpsUpgrade`,
+default `true`; the downgrade direction never follows), and every redirect
+target re-passes the deployment's `checkUrl` policy hook before it is
+fetched — destination policy holds across a chain exactly as for a directly
+submitted URL. See the
+[mapper-request changelog](https://jsr.io/@christiansmith/mapper-request)
+for the full option reference.
+
 ### A custom surface
 
 An `EXTENSIONS` module is plain code:

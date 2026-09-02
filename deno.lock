@@ -2,7 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@christiansmith/mapper-js@~0.3.2": "0.3.2",
-    "jsr:@christiansmith/mapper-request@0.3": "0.3.0",
+    "jsr:@christiansmith/mapper-request@0.4": "0.4.0",
     "jsr:@std/assert@1": "1.0.11",
     "jsr:@std/internal@^1.0.5": "1.0.13",
     "jsr:@std/yaml@1": "1.2.0",
@@ -15,8 +15,8 @@
     "@christiansmith/mapper-js@0.3.2": {
       "integrity": "87c8e791dbb0184e1c82759f77b348516dcdb8a2b2674fc1d884b448c8cd01b2"
     },
-    "@christiansmith/mapper-request@0.3.0": {
-      "integrity": "3c1ad369f3936c47200b82c76e2a0584a62ffc38273aad101555eed3dd4ff6d1",
+    "@christiansmith/mapper-request@0.4.0": {
+      "integrity": "1ee434e49076b2e02c303dc35c2a83d075785aa95b729032157f2abd58dbf2e9",
       "dependencies": [
         "npm:@christiansmith/mapper-js@~0.3.1",
         "npm:cheerio",
@@ -227,7 +227,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@christiansmith/mapper-js@~0.3.2",
-      "jsr:@christiansmith/mapper-request@0.3",
+      "jsr:@christiansmith/mapper-request@0.4",
       "jsr:@std/assert@1",
       "jsr:@std/yaml@1",
       "npm:jose@5"

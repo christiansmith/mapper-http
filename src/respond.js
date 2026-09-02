@@ -71,6 +71,9 @@ export function error(err, { reqId, cors = {}, errorDetail = 'minimal' }) {
   if (isApi && /** @type {any} */ (err).report) {
     body.report = /** @type {any} */ (err).report
   }
+  if (isApi && /** @type {any} */ (err).location) {
+    body.location = /** @type {any} */ (err).location
+  }
   body.requestId = reqId
 
   return new Response(JSON.stringify(body), { status, headers: baseHeaders(reqId, cors) })

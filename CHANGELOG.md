@@ -5,6 +5,38 @@ Notable changes to `@christiansmith/mapper-http`. The format follows
 [semver](https://semver.org). Pre-1.0, the public API may change between
 minor versions.
 
+## [0.3.2] — unreleased
+
+Makes the redirect policy introduced by mapper-request 0.4.0 consumable
+from the stock image as pure configuration, and classifies refused
+redirects as client errors.
+
+### Changed
+
+- **A refused redirect is now `422 RedirectRefused`, previously
+  `500 InternalError`.** A redirect the request plugin's policy declines
+  to follow is a policy outcome meeting an ordinary web condition, not a
+  server fault: the response carries the refusal message (which names the
+  URL and the redirect target) and a structured `location` field. Clients
+  keying on the status for this case must update. The mapping-path health
+  canary is unaffected — a redirecting canary still reports `503`.
+- `@christiansmith/mapper-request` `^0.4.0`: opt-in bounded redirect
+  following (`redirect: 'follow'` — GET-only, bounded hops, same-origin
+  plus https upgrade, every hop re-passed through `checkUrl`),
+  construction-validated policy config, and the typed refusal error this
+  release's classification is built on. See that package's changelog for
+  the full surface and notes.
+
+### Added
+
+- A "Following redirects" section in the README: the extensions-module
+  configuration a deployment uses to opt in, and the bounds that hold
+  when it does.
+- Tests pin the new contract end to end: refusal → 422 with `location`;
+  an untyped plugin failure still → 500 with detail suppressed; a
+  redirecting canary still → 503; and a follow-enabled surface resolves
+  a trailing-slash 301 and maps.
+
 ## [0.3.1] — 2026-08-24
 
 Dependency updates that deliver two fixes reported from the field, both

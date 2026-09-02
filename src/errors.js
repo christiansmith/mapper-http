@@ -55,6 +55,20 @@ export class InvalidMappingDocumentError extends ApiError {
   }
 }
 
+export class RedirectRefusedError extends ApiError {
+  /**
+   * A request-performing plugin refused to follow an upstream redirect — a
+   * policy outcome meeting an ordinary web condition, not a server fault.
+   * Carries the refused `location` when the upstream supplied one, so
+   * consumers can key on structure rather than parse the message.
+   * @param {string} message the plugin's message (names the URL and target)
+   * @param {string} [location] the refused redirect target
+   */
+  constructor(message, location) {
+    super('RedirectRefused', message, 422, location ? { location } : undefined)
+  }
+}
+
 export class UnauthorizedError extends ApiError {
   /** @param {string} message */
   constructor(message) {
